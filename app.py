@@ -85,7 +85,7 @@ if not onoff_filtered.empty:
     st.plotly_chart(fig_onoff, use_container_width=True)
     st.caption(
         "Bar chart shows how often the device was started each day. "
-        "Darker bars mean the device was started more times that day, lighter bars mean fewer starts. "
+        "Lighter bars mean the device was started more times that day, darker bars mean fewer starts. "
         "You can quickly see patterns of frequent or infrequent usage."
     )
 else:
