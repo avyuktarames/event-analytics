@@ -68,39 +68,38 @@ st.caption(
 )
 
 # ----------------------
-# 2. On/Off Cycles - Frequency & Patterns with Plain-Language Caption
+# 2. Start/Stop Frequency and Patterns - Static Bar Chart
 # ----------------------
-st.subheader("2️⃣ Device Start/Stop Patterns Throughout Months")
+st.subheader("2️ Start/Stop Frequency and Patterns")
 if not onoff_filtered.empty:
     onoff_filtered["timestamp"] = pd.to_datetime(onoff_filtered["created_at"])
     onoff_filtered["date"] = onoff_filtered["timestamp"].dt.date
-    onoff_filtered["month"] = onoff_filtered["timestamp"].dt.to_period("M").astype(str)
 
     # Aggregate frequency of ON events per day
-    on_freq = onoff_filtered[onoff_filtered["on_off_status"]=="ON"].groupby(["month","date"]).size().reset_index(name="count")
-
-    # Use a heatmap-style bar chart to show frequency by day and month
+    on_freq = onoff_filtered[onoff_filtered["on_off_status"]=="ON"].groupby("date").size().reset_index(name="count")
+    
+    # Static bar chart with color intensity indicating frequency
     fig_onoff = px.bar(
         on_freq,
         x="date",
         y="count",
         color="count",
-        animation_frame="month",
         color_continuous_scale="Viridis",
         title="Daily Frequency of Device Start Events"
     )
+    
     fig_onoff.update_layout(
         xaxis_title="Date",
-        yaxis_title="Number of Starts",
-        coloraxis_colorbar=dict(title="Start Count")
+        yaxis_title="Number of Start Events",
+        xaxis_tickangle=-45
     )
-    st.plotly_chart(fig_onoff, use_container_width=True)
     
+    st.plotly_chart(fig_onoff, use_container_width=True)
     st.caption(
-        "This chart shows when the device was started each day. "
-        "Colors indicate the number of starts: lighter color = more starts, darker color = fewer starts. "
-        "Use the month selector (top-right) to view daily patterns month by month. "
-        "This helps see periods of high activity and periods when the device was mostly idle."
+        "Bar chart shows how often the device was started each day. "
+        "Lighter bars indicate more starts, darker bars indicate fewer starts. "
+        "You can quickly identify periods of high or low activity. "
+        "Hover over each bar to see the exact number of starts for that day."
     )
 else:
     st.info("No On/Off data for this device.")
