@@ -168,27 +168,29 @@ else:
     st.info("No On/Off data for this device.")
 
 # ----------------------
-# 5. Runtime / Water Yield / Power Usage
+# 5. Runtime / Water Yield / Power Usage (Dual-axis)
 # ----------------------
-st.subheader("5️ Runtime / Water Yield / Power Usage")
+st.subheader("5️ Device Efficiency Metrics per Month")
+
 if not monthly_filtered.empty:
     monthly_filtered_sorted = monthly_filtered.sort_values("month")
     
-    # Convert month numbers to month names
-    monthly_filtered_sorted["month_name"] = pd.to_datetime(monthly_filtered_sorted["month"].astype(str), format="%Y-%m").dt.strftime("%b %Y")
+    # Convert month numbers to month names for x-axis
+    monthly_filtered_sorted["month_name"] = pd.to_datetime(
+        monthly_filtered_sorted["month"].astype(str), format="%Y-%m"
+    ).dt.strftime("%b %Y")
     
     fig_runtime = go.Figure()
     
-    # Runtime bars
+    # Bar for Runtime Hours (primary y-axis)
     fig_runtime.add_trace(go.Bar(
         x=monthly_filtered_sorted["month_name"],
         y=monthly_filtered_sorted["runtime_hours"],
         name="Runtime (hrs)",
-        marker_color="royalblue",
-        yaxis="y1"
+        marker_color="royalblue"
     ))
     
-    # Water Yield line
+    # Line for Water Yield (secondary y-axis)
     fig_runtime.add_trace(go.Scatter(
         x=monthly_filtered_sorted["month_name"],
         y=monthly_filtered_sorted["water_yield_liters"],
@@ -198,36 +200,37 @@ if not monthly_filtered.empty:
         yaxis="y2"
     ))
     
-    # Power Consumed line
+    # Line for Power Consumed (secondary y-axis)
     fig_runtime.add_trace(go.Scatter(
         x=monthly_filtered_sorted["month_name"],
         y=monthly_filtered_sorted["power_consumed_KVA"],
         mode="lines+markers",
         name="Power Consumed (kVA)",
         line=dict(color="orange"),
-        yaxis="y3"
+        yaxis="y2"
     ))
     
-    # Layout for triple-axis
+    # Layout with dual-axis
     fig_runtime.update_layout(
-        title="Monthly Device Usage Metrics",
+        title=f"Monthly Device Efficiency Metrics for Device UID: {selected_uid}",
         xaxis=dict(title="Month", tickangle=-45),
-        yaxis=dict(title="Runtime (hrs)", side="left"),
-        yaxis2=dict(title="Water Yield (L)", overlaying="y", side="right"),
-        yaxis3=dict(title="Power Consumed (kVA)", overlaying="y", side="right", position=1.1),
-        barmode='group',
+        yaxis=dict(title="Runtime (hrs)"),
+        yaxis2=dict(title="Water Yield (L) / Power Consumed (kVA)", overlaying="y", side="right"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
-    runtime_total = monthly_filtered_sorted["runtime_hours"].sum()
-    water_total = monthly_filtered_sorted["water_yield_liters"].sum()
-    power_total = monthly_filtered_sorted["power_consumed_KVA"].sum()
-    
     st.plotly_chart(fig_runtime, use_container_width=True)
+    
+    # Personalized caption
+    total_runtime = monthly_filtered_sorted["runtime_hours"].sum()
+    total_water = monthly_filtered_sorted["water_yield_liters"].sum()
+    total_power = monthly_filtered_sorted["power_consumed_KVA"].sum()
+    
     st.caption(
-        f"In selected month(s): total runtime = {runtime_total:.1f} hrs, "
-        f"total water yielded = {water_total:.1f} L, total power consumed = {power_total:.1f} kVA. "
-        "Blue bars = runtime, Green line = water yield, Orange line = power. Helps measure efficiency and productivity of this device."
+        f"Blue bars = Runtime hours; Green line = Water Yield; Orange line = Power Consumed.\n\n"
+        f"For the selected period, this device ran a total of {total_runtime:.1f} hrs, "
+        f"produced {total_water:.1f} liters of water, and consumed {total_power:.1f} kVA power.\n"
+        f"Devices that produce more water with lower runtime and power are considered more efficient."
     )
 else:
     st.info("No monthly usage data available for this device.")
