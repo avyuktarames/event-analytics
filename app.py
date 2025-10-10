@@ -68,25 +68,39 @@ st.caption(
 )
 
 # ----------------------
-# 2. On/Off Cycles - Enhanced with Plain-Language Caption
+# 2. On/Off Cycles - Frequency & Patterns with Plain-Language Caption
 # ----------------------
-st.subheader("2️ Start/Stop Frequency and Patterns")
+st.subheader("2️⃣ Device Start/Stop Patterns Throughout Months")
 if not onoff_filtered.empty:
     onoff_filtered["timestamp"] = pd.to_datetime(onoff_filtered["created_at"])
     onoff_filtered["date"] = onoff_filtered["timestamp"].dt.date
+    onoff_filtered["month"] = onoff_filtered["timestamp"].dt.to_period("M").astype(str)
 
     # Aggregate frequency of ON events per day
-    on_freq = onoff_filtered[onoff_filtered["on_off_status"]=="ON"].groupby("date").size().reset_index(name="count")
-    
-    fig_onoff = px.bar(on_freq, x="date", y="count",
-                       color="count", color_continuous_scale="Viridis",
-                       title="Daily Frequency of Start Events")
-    fig_onoff.update_layout(xaxis_title="Date", yaxis_title="Number of Start Events")
+    on_freq = onoff_filtered[onoff_filtered["on_off_status"]=="ON"].groupby(["month","date"]).size().reset_index(name="count")
+
+    # Use a heatmap-style bar chart to show frequency by day and month
+    fig_onoff = px.bar(
+        on_freq,
+        x="date",
+        y="count",
+        color="count",
+        animation_frame="month",
+        color_continuous_scale="Viridis",
+        title="Daily Frequency of Device Start Events"
+    )
+    fig_onoff.update_layout(
+        xaxis_title="Date",
+        yaxis_title="Number of Starts",
+        coloraxis_colorbar=dict(title="Start Count")
+    )
     st.plotly_chart(fig_onoff, use_container_width=True)
+    
     st.caption(
-        "Bar chart shows how often the device was started each day. "
-        "Lighter bars mean the device was started more times that day, darker bars mean fewer starts. "
-        "You can quickly see patterns of frequent or infrequent usage."
+        "This chart shows when the device was started each day. "
+        "Colors indicate the number of starts: lighter color = more starts, darker color = fewer starts. "
+        "Use the month selector (top-right) to view daily patterns month by month. "
+        "This helps see periods of high activity and periods when the device was mostly idle."
     )
 else:
     st.info("No On/Off data for this device.")
@@ -102,9 +116,8 @@ if not fail_filtered.empty:
                           title="Failure Type Distribution")
     st.plotly_chart(fig_fail, use_container_width=True)
     st.caption(
-        "Treemap shows the number of occurrences of each failure type. "
-        "Larger rectangles and darker red colors indicate more frequent failures. "
-        "This helps identify the most common issues for the device."
+        "This treemap shows which failures are most common." "Bigger and darker rectangles = more recurring problems."
+        "Hover on each block to see the count. This helps prioritize maintenance."
     )
 else:
     st.info("No failures recorded for this device.")
@@ -112,7 +125,8 @@ else:
 # ----------------------
 # 4. Resting Time Between OFF → Next ON by Month
 # ----------------------
-st.subheader("4️ Resting Time Between Cycles")
+st.subheader("4️⃣ Resting Time Between OFF → Next ON by Month")
+
 if not onoff_filtered.empty:
     onoff_filtered = onoff_filtered.sort_values("timestamp")
     
@@ -123,23 +137,37 @@ if not onoff_filtered.empty:
         if row["on_off_status"] == "OFF":
             previous_off_time = row["timestamp"]
         elif row["on_off_status"] == "ON" and previous_off_time is not None:
-            delta = (row["timestamp"] - previous_off_time).total_seconds()/60  # minutes
+            delta = (row["timestamp"] - previous_off_time).total_seconds() / 60  # minutes
             rest_list.append({"timestamp": row["timestamp"], "resting_minutes": delta})
             previous_off_time = None
 
     rest_df = pd.DataFrame(rest_list)
+    
     if not rest_df.empty:
         # Extract month for grouping
         rest_df["month"] = rest_df["timestamp"].dt.to_period("M").astype(str)
         
-        fig_rest = px.box(rest_df, x="month", y="resting_minutes",
-                          points="all", color_discrete_sequence=["skyblue"],
-                          title="Distribution of Resting Time Between OFF → Next ON")
-        fig_rest.update_layout(xaxis_title="Month", yaxis_title="Resting Time (minutes)")
+        # Violin + strip plot to show distribution and individual resting times
+        fig_rest = px.violin(
+            rest_df,
+            x="month",
+            y="resting_minutes",
+            box=True,          # draw box inside violin
+            points="all",      # show all points
+            color="month",
+            title="Distribution of Resting Time Between OFF → Next ON by Month",
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig_rest.update_layout(
+            xaxis_title="Month",
+            yaxis_title="Resting Time (minutes)",
+            showlegend=False
+        )
         st.plotly_chart(fig_rest, use_container_width=True)
         st.caption(
-            "Box plot shows how much resting time (in minutes) the device gets between switching OFF and the next ON. "
-            "Each box represents a month. Longer boxes or higher medians indicate more rest between cycles, shorter boxes indicate frequent use."
+            "Each violin shows how much resting time (in minutes) the device had between being turned OFF and the next ON, for that month. "
+            "The width indicates frequency: wider areas = more devices/times had that rest. "
+            "Dots show individual rest times. This helps see if the device is getting enough rest or being started too frequently."
         )
     else:
         st.info("Not enough OFF → ON transitions to compute resting time.")
@@ -147,59 +175,81 @@ else:
     st.info("No On/Off data for this device.")
 
 # ----------------------
-# 5. Runtime / Water Yield / Power Usage
+# 5. Runtime / Water Yield / Power Usage - Triple comparison
 # ----------------------
-st.subheader("5️ Runtime / Water Yield / Power Usage")
+st.subheader("5️ Device Efficiency Metrics per Month")
 
 if not monthly_filtered.empty:
     monthly_filtered_sorted = monthly_filtered.sort_values("month")
-    
-    # Convert month numbers to month names for x-axis
     monthly_filtered_sorted["month_name"] = pd.to_datetime(monthly_filtered_sorted["month"].astype(str), format="%Y-%m").dt.strftime("%b %Y")
-    
-    fig_runtime = go.Figure()
-    
-    # Bar for Runtime Hours
-    fig_runtime.add_trace(go.Bar(
+
+    fig_efficiency = go.Figure()
+
+    # Add bars for Runtime
+    fig_efficiency.add_trace(go.Bar(
         x=monthly_filtered_sorted["month_name"],
         y=monthly_filtered_sorted["runtime_hours"],
         name="Runtime (hrs)",
         marker_color="royalblue",
         yaxis="y1"
     ))
-    
-    # Line overlay for Water Yield
-    fig_runtime.add_trace(go.Scatter(
+
+    # Add bars for Water Yield
+    fig_efficiency.add_trace(go.Bar(
         x=monthly_filtered_sorted["month_name"],
         y=monthly_filtered_sorted["water_yield_liters"],
-        mode="lines+markers",
         name="Water Yield (L)",
-        line=dict(color="green"),
+        marker_color="green",
         yaxis="y2"
     ))
-    
-    # Line overlay for Power Consumed
-    fig_runtime.add_trace(go.Scatter(
+
+    # Add bars for Power Consumed
+    fig_efficiency.add_trace(go.Bar(
         x=monthly_filtered_sorted["month_name"],
         y=monthly_filtered_sorted["power_consumed_KVA"],
-        mode="lines+markers",
         name="Power Consumed (kVA)",
-        line=dict(color="orange"),
-        yaxis="y2"
+        marker_color="orange",
+        yaxis="y3"
     ))
-    
-    # Layout for dual-axis
-    fig_runtime.update_layout(
-        title="Monthly Device Usage Metrics",
+
+    # Layout with three y-axes
+    fig_efficiency.update_layout(
+        title="Monthly Device Efficiency Metrics",
         xaxis=dict(title="Month", tickangle=-45),
-        yaxis=dict(title="Runtime (hrs)", side="left"),
-        yaxis2=dict(title="Water Yield / Power (L / kVA)", overlaying="y", side="right"),
+        yaxis=dict(
+            title="Runtime (hrs)",
+            side="left",
+            showgrid=False,
+            position=0.0
+        ),
+        yaxis2=dict(
+            title="Water Yield (L)",
+            side="right",
+            overlaying="y",
+            showgrid=False,
+            position=1.0
+        ),
+        yaxis3=dict(
+            title="Power Consumed (kVA)",
+            side="right",
+            overlaying="y",
+            anchor="free",
+            position=0.95,
+            showgrid=False
+        ),
         barmode='group',
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
-    
-    st.plotly_chart(fig_runtime, use_container_width=True)
-    st.caption("Blue bars = Runtime hours; Green line = Water Yield; Orange line = Power Consumed. Dual-axis allows clear comparison across months.")
+
+    st.plotly_chart(fig_efficiency, use_container_width=True)
+    st.caption(
+        "Grouped bars per month show three metrics simultaneously:\n"
+        "• Blue = Runtime (hours)\n"
+        "• Green = Water Yield (Liters)\n"
+        "• Orange = Power Consumed (kVA)\n"
+        "Interpretation: Devices that produce more water yield with lower runtime and power are more efficient. "
+        "Use the bar heights to compare performance month-to-month."
+    )
 else:
     st.info("No monthly usage data available for this device.")
 # ----------------------
