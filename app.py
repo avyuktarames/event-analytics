@@ -149,7 +149,7 @@ else:
 # ----------------------
 # 5. Runtime / Water Yield / Power Usage
 # ----------------------
-st.subheader("5️⃣ Runtime / Water Yield / Power Usage")
+st.subheader("5️ Runtime / Water Yield / Power Usage")
 
 if not monthly_filtered.empty:
     monthly_filtered_sorted = monthly_filtered.sort_values("month")
