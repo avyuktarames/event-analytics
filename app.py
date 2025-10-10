@@ -175,80 +175,56 @@ else:
     st.info("No On/Off data for this device.")
 
 # ----------------------
-# 5. Runtime / Water Yield / Power Usage - Triple comparison
+# 5. Device Efficiency: Runtime / Water Yield / Power Consumed
 # ----------------------
-st.subheader("5️ Device Efficiency Metrics per Month")
+st.subheader("5️ Device Efficiency Overview (Per Month)")
 
 if not monthly_filtered.empty:
     monthly_filtered_sorted = monthly_filtered.sort_values("month")
-    monthly_filtered_sorted["month_name"] = pd.to_datetime(monthly_filtered_sorted["month"].astype(str), format="%Y-%m").dt.strftime("%b %Y")
-
-    fig_efficiency = go.Figure()
-
-    # Add bars for Runtime
-    fig_efficiency.add_trace(go.Bar(
-        x=monthly_filtered_sorted["month_name"],
-        y=monthly_filtered_sorted["runtime_hours"],
-        name="Runtime (hrs)",
-        marker_color="royalblue",
-        yaxis="y1"
-    ))
-
-    # Add bars for Water Yield
-    fig_efficiency.add_trace(go.Bar(
-        x=monthly_filtered_sorted["month_name"],
-        y=monthly_filtered_sorted["water_yield_liters"],
-        name="Water Yield (L)",
-        marker_color="green",
-        yaxis="y2"
-    ))
-
-    # Add bars for Power Consumed
-    fig_efficiency.add_trace(go.Bar(
-        x=monthly_filtered_sorted["month_name"],
-        y=monthly_filtered_sorted["power_consumed_KVA"],
-        name="Power Consumed (kVA)",
-        marker_color="orange",
-        yaxis="y3"
-    ))
-
-    # Layout with three y-axes
-    fig_efficiency.update_layout(
-        title="Monthly Device Efficiency Metrics",
-        xaxis=dict(title="Month", tickangle=-45),
-        yaxis=dict(
-            title="Runtime (hrs)",
-            side="left",
-            showgrid=False,
-            position=0.0
-        ),
-        yaxis2=dict(
-            title="Water Yield (L)",
-            side="right",
-            overlaying="y",
-            showgrid=False,
-            position=1.0
-        ),
-        yaxis3=dict(
-            title="Power Consumed (kVA)",
-            side="right",
-            overlaying="y",
-            anchor="free",
-            position=0.95,
-            showgrid=False
-        ),
-        barmode='group',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    
+    # Convert month numbers to month names for x-axis
+    monthly_filtered_sorted["month_name"] = pd.to_datetime(
+        monthly_filtered_sorted["month"].astype(str), format="%Y-%m"
+    ).dt.strftime("%b %Y")
+    
+    # Create bubble chart
+    fig_efficiency = px.scatter(
+        monthly_filtered_sorted,
+        x="month_name",
+        y="runtime_hours",
+        size="water_yield_liters",
+        color="power_consumed_KVA",
+        color_continuous_scale="Oranges",
+        size_max=60,
+        title="Device Efficiency Overview",
+        labels={
+            "runtime_hours": "Runtime (hrs)",
+            "water_yield_liters": "Water Yield (L)",
+            "power_consumed_KVA": "Power Consumed (kVA)",
+            "month_name": "Month"
+        },
+        hover_data={
+            "runtime_hours": True,
+            "water_yield_liters": True,
+            "power_consumed_KVA": True
+        }
     )
-
+    
+    fig_efficiency.update_layout(
+        xaxis_tickangle=-45,
+        yaxis=dict(title="Runtime (hrs)"),
+        coloraxis_colorbar=dict(title="Power Consumed (kVA)")
+    )
+    
     st.plotly_chart(fig_efficiency, use_container_width=True)
+    
     st.caption(
-        "Grouped bars per month show three metrics simultaneously:\n"
-        "• Blue = Runtime (hours)\n"
-        "• Green = Water Yield (Liters)\n"
-        "• Orange = Power Consumed (kVA)\n"
-        "Interpretation: Devices that produce more water yield with lower runtime and power are more efficient. "
-        "Use the bar heights to compare performance month-to-month."
+        "Bubble chart shows device efficiency per month:\n"
+        "- X-axis: Month\n"
+        "- Y-axis: Runtime in hours (lower is better if yield is high)\n"
+        "- Bubble size: Water Yield in liters (bigger = more yield)\n"
+        "- Bubble color: Power consumed in kVA (lighter = lower power consumption)\n"
+        "Optimal efficiency is represented by large, lighter-colored bubbles lower on the Y-axis."
     )
 else:
     st.info("No monthly usage data available for this device.")
