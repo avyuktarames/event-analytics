@@ -95,16 +95,32 @@ else:
 # 3. Failure Analytics
 # ----------------------
 st.subheader("3️ Failure Analytics")
+
 if not fail_filtered.empty:
+    # Aggregate failure counts
     fail_counts = fail_filtered.groupby("failure_type").size().reset_index(name="count")
-    fig_fail = px.treemap(fail_counts, path=["failure_type"], values="count",
-                          color="count", color_continuous_scale="Reds",
-                          title=f"Failure Type Distribution for Device {selected_uid}")
-    st.plotly_chart(fig_fail, use_container_width=True)
-    st.caption(
-        f"Treemap shows frequency of failures for Device {selected_uid}. "
-        f"Most common: {fail_counts.iloc[fail_counts['count'].idxmax()]['failure_type']} ({fail_counts['count'].max()} times)."
-    )
+    
+    if fail_counts.empty:
+        st.warning(f"No failure data available for Device {selected_uid} in the selected period.")
+    else:
+        fig_fail = px.treemap(
+            fail_counts,
+            path=["failure_type"],
+            values="count",
+            color="count",
+            color_continuous_scale="Reds",
+            title=f"Failure Type Distribution for Device {selected_uid}"
+        )
+        st.plotly_chart(fig_fail, use_container_width=True)
+        
+        # Dynamic caption with device-specific stats
+        top_failure = fail_counts.iloc[fail_counts['count'].idxmax()]
+        st.caption(
+            f"Treemap shows the frequency of different failure types for Device **{selected_uid}** "
+            f"during the selected period. The most common failure was **{top_failure['failure_type']}**, "
+            f"which occurred **{top_failure['count']} times**."
+        )
+
 else:
     st.info("No failures recorded for this device.")
 
