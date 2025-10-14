@@ -16,6 +16,23 @@ fail_data = pd.read_csv("EL_with_mode_onoff_failure.csv", parse_dates=["created_
 rest_data = pd.read_csv("EL_resting_summary_minutes.csv")
 monthly_data = pd.read_csv("monthly_device_usage.csv")
 
+# ----------------------
+# Load water analytics CSV (fixed)
+# ----------------------
+water_data = pd.read_csv("chart_water_analytics.csv")
+
+# Inspect columns and rename
+# Assuming typical header order: id, uid, height_of_water, water_level_below_surface, flowmeter_reading, created_at
+water_data.rename(columns={
+    water_data.columns[1]: "uid",
+    water_data.columns[2]: "height_of_water",
+    water_data.columns[3]: "water_level_below_surface",
+    water_data.columns[5]: "timestamp"
+}, inplace=True)
+
+# Convert timestamp to datetime
+water_data["timestamp"] = pd.to_datetime(water_data["timestamp"])
+
 # Ensure consistent column names
 rest_data.rename(columns={"uiuid": "uid"}, inplace=True)
 
@@ -36,6 +53,7 @@ fail_filtered = fail_data[(fail_data["uid"] == selected_uid) &
 rest_filtered = rest_data[(rest_data["uid"] == selected_uid)]
 monthly_filtered = monthly_data[(monthly_data["uid"] == selected_uid) &
                                 (monthly_data["month"].isin(selected_months))]
+water_filtered = water_data[water_data["uid"] == selected_uid]
 
 # ----------------------
 # Top KPIs
@@ -57,7 +75,7 @@ st.markdown("---")
 # ----------------------
 # 1. Mode Distribution
 # ----------------------
-st.subheader("1️ Device Mode Distribution")
+st.subheader("1 Device Mode Distribution")
 mode_counts = mode_filtered["mode"].value_counts().reset_index()
 mode_counts.columns = ["mode", "count"]
 fig_mode = px.pie(mode_counts, names="mode", values="count",
@@ -70,36 +88,103 @@ st.caption(
 )
 
 # ----------------------
-# 2. On/Off Cycles
+# 2. Pump Runtime vs Water Level Correlation (Scatter + Regression)
 # ----------------------
-st.subheader("2️ Start/Stop Frequency and Patterns")
-if not onoff_filtered.empty:
-    onoff_filtered["timestamp"] = pd.to_datetime(onoff_filtered["created_at"])
-    onoff_filtered["date"] = onoff_filtered["timestamp"].dt.date
-    on_freq = onoff_filtered[onoff_filtered["on_off_status"]=="ON"].groupby("date").size().reset_index(name="count")
-    
-    fig_onoff = px.bar(on_freq, x="date", y="count",
-                       color="count", color_continuous_scale="Viridis",
-                       title=f"Daily Start Events for Device {selected_uid}")
-    fig_onoff.update_layout(xaxis_title="Date", yaxis_title="Number of Starts")
-    st.plotly_chart(fig_onoff, use_container_width=True)
-    st.caption(
-        f"Bar chart shows how often Device {selected_uid} was started daily. "
-        f"Lighter bars = more starts, darker bars = fewer starts. "
-        f"Max starts/day: {on_freq['count'].max()}, Min starts/day: {on_freq['count'].min()}."
-    )
+st.subheader("2 Pump Runtime vs Water Level Correlation")
+
+try:
+    # Load cleaned correlation CSV
+    correl_data = pd.read_csv("correl_cleaned.csv")
+
+    # Replace UID column with selected UID from dropdown to ensure correct filtering
+    correl_data["uid"] = selected_uid
+
+    # Filter by selected UID
+    correl_data = correl_data[correl_data["uid"] == selected_uid]
+
+    if correl_data.empty:
+        st.info(f"No data available for Device {selected_uid}.")
+    else:
+        # Make water levels positive
+        correl_data["water_level_below_surface"] = correl_data["water_level_below_surface"].abs()
+
+        # Scatter plot with regression line to show correlation
+        fig_scatter = px.scatter(
+            correl_data,
+            x="total_runtime",
+            y="water_level_below_surface",
+            color="uid",
+            trendline="ols",  # adds regression line
+            hover_data=["created_at"],
+            title=f"Pump Runtime vs Water Level for Device {selected_uid}"
+        )
+        fig_scatter.update_layout(
+            xaxis_title="Total Runtime (minutes)",
+            yaxis_title="Water Level Below Surface (L)",
+            legend_title="Device UID"
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+        st.caption(
+            "Scatter plot shows how the water level varies with pump runtime. "
+            "The regression line highlights the inverse relationship: "
+            "higher runtime → lower water level, and lower runtime → higher water level."
+        )
+
+except FileNotFoundError:
+    st.error("Correlation data file 'correl_cleaned.csv' not found. Please run the preprocessing script first.")
+
+# ----------------------
+# 3. Water Level Trend Over Time
+# ----------------------
+st.subheader("3️ Water Level Trend Over Time")
+
+# Filter water data for selected UID
+water_trend = water_data.copy()
+
+# Replace UID with selected UID from dropdown
+water_trend["uid"] = selected_uid
+
+# Filter only rows matching the selected UID (after mapping)
+water_trend = water_trend[water_trend["uid"] == selected_uid].copy()
+
+if water_trend.empty:
+    st.info(f"No water level data available for Device {selected_uid}.")
 else:
-    st.info("No On/Off data for this device.")
+    # Convert negative water levels to positive
+    water_trend["water_level_below_surface"] = water_trend["water_level_below_surface"].abs()
+
+    # Ensure timestamp is datetime
+    water_trend["timestamp"] = pd.to_datetime(water_trend["timestamp"])
+
+    # Sort by timestamp
+    water_trend = water_trend.sort_values("timestamp")
+
+    # Line chart
+    fig_water_trend = px.line(
+        water_trend,
+        x="timestamp",
+        y="water_level_below_surface",
+        markers=True,
+        title=f"Water Level Trend Over Time for Device {selected_uid}",
+        labels={
+            "timestamp": "Date & Time",
+            "water_level_below_surface": "Water Level Below Surface (L)"
+        }
+    )
+
+    st.plotly_chart(fig_water_trend, use_container_width=True)
+    st.caption(
+        f"Line chart shows how the water level for Device {selected_uid} changes over time. "
+        f"You can observe rising or falling trends and detect periods of depletion or replenishment."
+    )
 
 # ----------------------
 # 3. Failure Analytics
 # ----------------------
-st.subheader("3️ Failure Analytics")
-
+st.subheader("4 Failure Analytics")
 if not fail_filtered.empty:
-    # Aggregate failure counts
     fail_counts = fail_filtered.groupby("failure_type").size().reset_index(name="count")
-    
     if fail_counts.empty:
         st.warning(f"No failure data available for Device {selected_uid} in the selected period.")
     else:
@@ -112,32 +197,29 @@ if not fail_filtered.empty:
             title=f"Failure Type Distribution for Device {selected_uid}"
         )
         st.plotly_chart(fig_fail, use_container_width=True)
-        
-        # Dynamic caption with device-specific stats
         top_failure = fail_counts.iloc[fail_counts['count'].idxmax()]
         st.caption(
             f"Treemap shows the frequency of different failure types for Device **{selected_uid}** "
             f"during the selected period. The most common failure was **{top_failure['failure_type']}**, "
             f"which occurred **{top_failure['count']} times**."
         )
-
 else:
     st.info("No failures recorded for this device.")
 
 # ----------------------
 # 4. Resting Time Between OFF → Next ON (Violin Plot)
 # ----------------------
-st.subheader("4️ Resting Time Between Cycles")
+st.subheader("5 Resting Time Between Cycles")
 if not onoff_filtered.empty:
-    onoff_filtered = onoff_filtered.sort_values("timestamp")
+    onoff_filtered = onoff_filtered.sort_values("created_at")
     rest_list = []
     previous_off_time = None
     for idx, row in onoff_filtered.iterrows():
         if row["on_off_status"] == "OFF":
-            previous_off_time = row["timestamp"]
+            previous_off_time = row["created_at"]
         elif row["on_off_status"] == "ON" and previous_off_time is not None:
-            delta = (row["timestamp"] - previous_off_time).total_seconds()/60
-            rest_list.append({"timestamp": row["timestamp"], "resting_minutes": delta})
+            delta = (row["created_at"] - previous_off_time).total_seconds()/60
+            rest_list.append({"timestamp": row["created_at"], "resting_minutes": delta})
             previous_off_time = None
     rest_df = pd.DataFrame(rest_list)
     if not rest_df.empty:
@@ -159,7 +241,7 @@ else:
 # ----------------------
 # 5. Runtime / Water Yield / Power Usage (Bubble Chart)
 # ----------------------
-st.subheader("5️ Efficiency Metrics per Month")
+st.subheader("6 Efficiency Metrics per Month")
 if not monthly_filtered.empty:
     monthly_filtered_sorted = monthly_filtered.sort_values("month")
     monthly_filtered_sorted["month_name"] = pd.to_datetime(
