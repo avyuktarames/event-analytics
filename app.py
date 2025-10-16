@@ -89,10 +89,16 @@ st.caption(
 )
 
 # ============================
-# 2. Runtime vs Water Level (Bagalkunte) — Corrected Trend Line & Null Handling (No Sign Flip)
+# 2. Runtime vs Water Level (Bagalkunte) — Interactive with Hover & White Background
 # ============================
 
 st.subheader("2️⃣ Relationship Between Pump Runtime and Water Level (Bagalkunte)")
+
+import os
+import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
 
 # --- Define base path ---
 base_path = os.path.dirname(__file__)
@@ -125,44 +131,56 @@ merged_data = merged_data[merged_data['Runtime_hrs'] > 0]
 # Only for Bagalkunte UID
 merged_data['UID'] = '865357062795388'
 
-# --- Scatter plot with trend line ---
-fig, ax = plt.subplots(figsize=(8, 6))
-sns.scatterplot(
+# --- Create interactive scatter plot with Plotly ---
+fig = px.scatter(
+    merged_data,
     x='Runtime_hrs',
     y='Water_Level_Below_Surface',
-    hue='Date',
-    palette='viridis',
-    s=100,
-    data=merged_data,
-    ax=ax
+    color='Date',
+    hover_data={
+        'Runtime_hrs': True,
+        'Water_Level_Below_Surface': True,
+        'Date': True
+    },
+    labels={
+        'Runtime_hrs': 'Total Runtime (hours)',
+        'Water_Level_Below_Surface': 'Water Level Below Surface (m)'
+    },
+    title='Bagalkunte UID: 865357062795388 — Pump Runtime vs Water Level'
 )
 
-# Fit trend line without flipping sign
+# --- Add trend line (linear regression) ---
 z = np.polyfit(merged_data['Runtime_hrs'], merged_data['Water_Level_Below_Surface'], 1)
 p = np.poly1d(z)
-ax.plot(
-    merged_data['Runtime_hrs'],
-    p(merged_data['Runtime_hrs']),
-    color='red',
-    linestyle='--',
-    label='Trend Line'
+fig.add_trace(
+    go.Scatter(
+        x=merged_data['Runtime_hrs'],
+        y=p(merged_data['Runtime_hrs']),
+        mode='lines',
+        name='Trend Line',
+        line=dict(color='red', dash='dash'),
+        hoverinfo='y+x+name'
+    )
 )
 
-# Customize axes
-ax.set_title('Bagalkunte UID: 865357062795388 — Pump Runtime vs Water Level', fontsize=14)
-ax.set_xlabel('Total Runtime (hours)', fontsize=12)
-ax.set_ylabel('Water Level Below Surface (m)', fontsize=12)
-ax.invert_yaxis()  # Lower value = deeper water
-ax.grid(True, linestyle='--', alpha=0.6)
-ax.legend(title='Date', bbox_to_anchor=(1.05, 1), loc='upper left')
+# --- Invert y-axis to match original Matplotlib version ---
+fig.update_yaxes(autorange="reversed")
 
-plt.tight_layout()
-st.pyplot(fig)
+# --- Set white background and grid similar to Matplotlib ---
+fig.update_layout(
+    xaxis=dict(showgrid=True, gridcolor='lightgray'),
+    yaxis=dict(showgrid=True, gridcolor='lightgray'),
+    legend=dict(title='Date', bordercolor='lightgray', borderwidth=1)
+)
 
-# Caption
+# --- Render in Streamlit ---
+st.plotly_chart(fig, use_container_width=True)
+
+# --- Caption ---
 st.caption(
     "💧 This scatter plot shows the **drawdown effect at Bagalkunte (UID: 865357062795388)**. "
-    "Each point represents a day's reading. The red dashed trend line now correctly shows that **longer pump runtimes lead to lower water levels**, "
+    "Hover over points or the trend line to see the exact runtime and water level. "
+    "The red dashed trend line now correctly shows that **longer pump runtimes lead to lower water levels**, "
     "demonstrating how pumping decreases water below surface."
 )
 
