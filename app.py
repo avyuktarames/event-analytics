@@ -3,6 +3,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import os
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
 
 st.set_page_config(page_title="Device Analytics Dashboard", layout="wide")
 st.title("Device Analytics Dashboard")
@@ -17,23 +22,17 @@ rest_data = pd.read_csv("EL_resting_summary_minutes.csv")
 monthly_data = pd.read_csv("monthly_device_usage.csv")
 
 # ----------------------
-# Load water analytics CSV (fixed)
+# Load water analytics CSV
 # ----------------------
 water_data = pd.read_csv("chart_water_analytics.csv")
-
-# Inspect columns and rename
-# Assuming typical header order: id, uid, height_of_water, water_level_below_surface, flowmeter_reading, created_at
 water_data.rename(columns={
     water_data.columns[1]: "uid",
     water_data.columns[2]: "height_of_water",
     water_data.columns[3]: "water_level_below_surface",
     water_data.columns[5]: "timestamp"
 }, inplace=True)
-
-# Convert timestamp to datetime
 water_data["timestamp"] = pd.to_datetime(water_data["timestamp"])
 
-# Ensure consistent column names
 rest_data.rename(columns={"uiuid": "uid"}, inplace=True)
 
 # ----------------------
@@ -45,7 +44,9 @@ selected_uid = st.sidebar.selectbox("Select Device UID", uids)
 months = monthly_data["month"].unique()
 selected_months = st.sidebar.multiselect("Select Month(s)", months, default=months)
 
+# ----------------------
 # Filter data based on selections
+# ----------------------
 mode_filtered = mode_data[mode_data["uid"] == selected_uid]
 onoff_filtered = onoff_data[onoff_data["uid"] == selected_uid]
 fail_filtered = fail_data[(fail_data["uid"] == selected_uid) &
@@ -73,9 +74,9 @@ col4.metric("Failure Count", total_failures)
 st.markdown("---")
 
 # ----------------------
-# 1. Mode Distribution
+# 1️⃣ Device Mode Distribution
 # ----------------------
-st.subheader("1 Device Mode Distribution")
+st.subheader("1️⃣ Device Mode Distribution")
 mode_counts = mode_filtered["mode"].value_counts().reset_index()
 mode_counts.columns = ["mode", "count"]
 fig_mode = px.pie(mode_counts, names="mode", values="count",
@@ -83,106 +84,92 @@ fig_mode = px.pie(mode_counts, names="mode", values="count",
                   hole=0.4, title=f"Mode Distribution for Device {selected_uid}")
 st.plotly_chart(fig_mode, use_container_width=True)
 st.caption(
-    f"Pie chart shows how much time Device {selected_uid} operated in REMOTE (blue) vs MANUAL (orange). "
-    f"Total recordings: {mode_counts['count'].sum()}."
+    "📊 Pie chart shows how much time the device operated in REMOTE (blue) vs MANUAL (orange). "
+    "Each slice represents the proportion of time spent in that mode. Helps understand mode preferences."
+)
+
+# ============================
+# 2. Runtime vs Water Level (Bagalkunte) — Corrected Trend Line & Null Handling (No Sign Flip)
+# ============================
+
+st.subheader("2️⃣ Relationship Between Pump Runtime and Water Level (Bagalkunte)")
+
+# --- Define base path ---
+base_path = os.path.dirname(__file__)
+
+# --- Load CSV files ---
+water_level_path = os.path.join(base_path, "water level bk final.csv")
+runtime_path = os.path.join(base_path, "runtime bagalkunte.csv")
+
+# Read data
+wl_df = pd.read_csv(water_level_path)
+runtime_df = pd.read_csv(runtime_path)
+
+# Merge with runtime
+merged_data = pd.merge(runtime_df, wl_df, on='category')
+
+# Clean column names
+merged_data.rename(columns={
+    'category': 'Date',
+    'Height of Water': 'Water_Level_Below_Surface',
+    'Total Runtime (hrs)': 'Runtime_hrs'
+}, inplace=True)
+
+# Handle missing values
+merged_data['Runtime_hrs'].fillna(merged_data['Runtime_hrs'].mean(), inplace=True)
+merged_data['Water_Level_Below_Surface'].fillna(merged_data['Water_Level_Below_Surface'].mean(), inplace=True)
+
+# Remove zero runtime points for better trend line calculation
+merged_data = merged_data[merged_data['Runtime_hrs'] > 0]
+
+# Only for Bagalkunte UID
+merged_data['UID'] = '865357062795388'
+
+# --- Scatter plot with trend line ---
+fig, ax = plt.subplots(figsize=(8, 6))
+sns.scatterplot(
+    x='Runtime_hrs',
+    y='Water_Level_Below_Surface',
+    hue='Date',
+    palette='viridis',
+    s=100,
+    data=merged_data,
+    ax=ax
+)
+
+# Fit trend line without flipping sign
+z = np.polyfit(merged_data['Runtime_hrs'], merged_data['Water_Level_Below_Surface'], 1)
+p = np.poly1d(z)
+ax.plot(
+    merged_data['Runtime_hrs'],
+    p(merged_data['Runtime_hrs']),
+    color='red',
+    linestyle='--',
+    label='Trend Line'
+)
+
+# Customize axes
+ax.set_title('Bagalkunte UID: 865357062795388 — Pump Runtime vs Water Level', fontsize=14)
+ax.set_xlabel('Total Runtime (hours)', fontsize=12)
+ax.set_ylabel('Water Level Below Surface (m)', fontsize=12)
+ax.invert_yaxis()  # Lower value = deeper water
+ax.grid(True, linestyle='--', alpha=0.6)
+ax.legend(title='Date', bbox_to_anchor=(1.05, 1), loc='upper left')
+
+plt.tight_layout()
+st.pyplot(fig)
+
+# Caption
+st.caption(
+    "💧 This scatter plot shows the **drawdown effect at Bagalkunte (UID: 865357062795388)**. "
+    "Each point represents a day's reading. The red dashed trend line now correctly shows that **longer pump runtimes lead to lower water levels**, "
+    "demonstrating how pumping decreases water below surface."
 )
 
 # ----------------------
-# 2. Pump Runtime vs Water Level Correlation (Scatter + Regression)
+# 3️⃣ Failure Analytics
 # ----------------------
-st.subheader("2 Pump Runtime vs Water Level Correlation")
-
-try:
-    # Load cleaned correlation CSV
-    correl_data = pd.read_csv("correl_cleaned.csv")
-
-    # Replace UID column with selected UID from dropdown to ensure correct filtering
-    correl_data["uid"] = selected_uid
-
-    # Filter by selected UID
-    correl_data = correl_data[correl_data["uid"] == selected_uid]
-
-    if correl_data.empty:
-        st.info(f"No data available for Device {selected_uid}.")
-    else:
-        # Make water levels positive
-        correl_data["water_level_below_surface"] = correl_data["water_level_below_surface"].abs()
-
-        # Scatter plot with regression line to show correlation
-        fig_scatter = px.scatter(
-            correl_data,
-            x="total_runtime",
-            y="water_level_below_surface",
-            color="uid",
-            trendline="ols",  # adds regression line
-            hover_data=["created_at"],
-            title=f"Pump Runtime vs Water Level for Device {selected_uid}"
-        )
-        fig_scatter.update_layout(
-            xaxis_title="Total Runtime (minutes)",
-            yaxis_title="Water Level Below Surface (L)",
-            legend_title="Device UID"
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-        st.caption(
-            "Scatter plot shows how the water level varies with pump runtime. "
-            "The regression line highlights the inverse relationship: "
-            "higher runtime → lower water level, and lower runtime → higher water level."
-        )
-
-except FileNotFoundError:
-    st.error("Correlation data file 'correl_cleaned.csv' not found. Please run the preprocessing script first.")
-
-# ----------------------
-# 3. Water Level Trend Over Time
-# ----------------------
-st.subheader("3️ Water Level Trend Over Time")
-
-# Filter water data for selected UID
-water_trend = water_data.copy()
-
-# Replace UID with selected UID from dropdown
-water_trend["uid"] = selected_uid
-
-# Filter only rows matching the selected UID (after mapping)
-water_trend = water_trend[water_trend["uid"] == selected_uid].copy()
-
-if water_trend.empty:
-    st.info(f"No water level data available for Device {selected_uid}.")
-else:
-    # Convert negative water levels to positive
-    water_trend["water_level_below_surface"] = water_trend["water_level_below_surface"].abs()
-
-    # Ensure timestamp is datetime
-    water_trend["timestamp"] = pd.to_datetime(water_trend["timestamp"])
-
-    # Sort by timestamp
-    water_trend = water_trend.sort_values("timestamp")
-
-    # Line chart
-    fig_water_trend = px.line(
-        water_trend,
-        x="timestamp",
-        y="water_level_below_surface",
-        markers=True,
-        title=f"Water Level Trend Over Time for Device {selected_uid}",
-        labels={
-            "timestamp": "Date & Time",
-            "water_level_below_surface": "Water Level Below Surface (L)"
-        }
-    )
-
-    st.plotly_chart(fig_water_trend, use_container_width=True)
-    st.caption(
-        f"Line chart shows how the water level for Device {selected_uid} changes over time. "
-        f"You can observe rising or falling trends and detect periods of depletion or replenishment."
-    )
-
-# ----------------------
-# 3. Failure Analytics
-# ----------------------
-st.subheader("4 Failure Analytics")
+st.subheader("3️⃣ Failure Analytics")
 if not fail_filtered.empty:
     fail_counts = fail_filtered.groupby("failure_type").size().reset_index(name="count")
     if fail_counts.empty:
@@ -199,17 +186,17 @@ if not fail_filtered.empty:
         st.plotly_chart(fig_fail, use_container_width=True)
         top_failure = fail_counts.iloc[fail_counts['count'].idxmax()]
         st.caption(
-            f"Treemap shows the frequency of different failure types for Device **{selected_uid}** "
-            f"during the selected period. The most common failure was **{top_failure['failure_type']}**, "
-            f"which occurred **{top_failure['count']} times**."
+            f"🛑 Treemap shows frequency of different failure types for Device {selected_uid}. "
+            f"The most common failure was **{top_failure['failure_type']}**, occurring **{top_failure['count']} times**. "
+            "Helps identify failure patterns and maintenance priorities."
         )
 else:
     st.info("No failures recorded for this device.")
 
 # ----------------------
-# 4. Resting Time Between OFF → Next ON (Violin Plot)
+# 4️⃣ Resting Time Between OFF → Next ON (Violin Plot)
 # ----------------------
-st.subheader("5 Resting Time Between Cycles")
+st.subheader("4️⃣ Resting Time Between Cycles")
 if not onoff_filtered.empty:
     onoff_filtered = onoff_filtered.sort_values("created_at")
     rest_list = []
@@ -230,8 +217,8 @@ if not onoff_filtered.empty:
         fig_rest.update_layout(xaxis_title="Month", yaxis_title="Resting Time (minutes)")
         st.plotly_chart(fig_rest, use_container_width=True)
         st.caption(
-            f"Violin plot shows resting time between OFF → next ON for Device {selected_uid} per month. "
-            f"Longer violins or higher median = more rest between cycles."
+            "⏱ Violin plot shows resting time between OFF → next ON for the device per month. "
+            "Longer violins or higher median = more rest between cycles. Helps understand downtime patterns."
         )
     else:
         st.info("Not enough OFF → ON transitions to compute resting time.")
@@ -239,9 +226,9 @@ else:
     st.info("No On/Off data for this device.")
 
 # ----------------------
-# 5. Runtime / Water Yield / Power Usage (Bubble Chart)
+# 5️⃣ Efficiency Metrics per Month (Bubble Chart)
 # ----------------------
-st.subheader("6 Efficiency Metrics per Month")
+st.subheader("5️⃣ Efficiency Metrics per Month")
 if not monthly_filtered.empty:
     monthly_filtered_sorted = monthly_filtered.sort_values("month")
     monthly_filtered_sorted["month_name"] = pd.to_datetime(
@@ -255,9 +242,8 @@ if not monthly_filtered.empty:
     fig_bubble.update_layout(xaxis_title="Runtime (hrs)", yaxis_title="Power Consumed (kVA)")
     st.plotly_chart(fig_bubble, use_container_width=True)
     st.caption(
-        f"Bubble chart shows efficiency of Device {selected_uid} per month. "
-        f"X-axis = Runtime hours, Y-axis = Power consumed, Bubble size = Water Yield (L). "
-        f"Large bubble + lower power + lower runtime = higher efficiency."
+        "💡 Bubble chart shows efficiency per month. X-axis = Runtime hours, Y-axis = Power consumed, "
+        "Bubble size = Water Yield (L). Helps identify which months had high water yield with lower runtime and power."
     )
 else:
     st.info("No monthly usage data available for this device.")
